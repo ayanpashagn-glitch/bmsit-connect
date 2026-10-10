@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bmsit
+      POSTGRES_DB: bmsit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U bmsit -d bmsit']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: [redis-server, --maxmemory, 64mb, --maxmemory-policy, noeviction]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  migrate:
+    build: .
+    env_file: .env
+    command: [alembic, upgrade, head]
+    depends_on:
+      db: {condition: service_healthy}
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MEDIA_ROOT: /app/.data/covers
+    command: [uvicorn, 'app.main:app', --host, '0.0.0.0', --port, '8000', --workers, '2', --proxy-headers, --forwarded-allow-ips, '*']
+    volumes:
+      - media_data:/app/.data
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  maintenance:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MEDIA_ROOT: /app/.data/covers
+    volumes:
+      - media_data:/app/.data
+    command: [python, -m, app.maintenance_worker]
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      CAMPUS_DOMAIN: ${CAMPUS_DOMAIN:?Set the public DNS hostname in .env}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app: {condition: service_healthy}
+volumes:
+  postgres_data:
+  media_data:
+  caddy_data:
+  caddy_config:

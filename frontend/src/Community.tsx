@@ -1,0 +1,31 @@
+import {useEffect,useState} from 'react';
+import {api,list,type Row,type Workspace} from './api';
+import {toast} from 'sonner';
+type Mutate=(path:string,method?:string,body?:unknown,message?:string)=>Promise<boolean>;
+export function Cover({url}:{url?:string}){return url?<img className="profile-cover" src={url} alt="Profile cover"/>:<div className="profile-cover cover-placeholder"/>}
+export function CoverEditor({path,url,mutate}:{path:string;url?:string;mutate:Mutate}){
+ const [preview,setPreview]=useState(url),[busy,setBusy]=useState(false),[enabled,setEnabled]=useState(false);
+ useEffect(()=>{api('/auth/options').then(o=>setEnabled(o.uploads_enabled)).catch(()=>{})},[]);
+ if(!enabled)return <Cover url={preview}/>;
+ return <div><Cover url={preview}/><label className="form-field"><span>Upload cover photo · JPEG, PNG or WebP, up to 2 MB</span><input aria-label="Upload cover photo" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;if(file.size>2000000){toast.error('Choose an image under 2 MB');return}setBusy(true);try{const image=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=reject;reader.readAsDataURL(file)});if(await mutate(path,'PUT',{image:image.split(',')[1]},'Cover photo saved'))setPreview(image)}catch{toast.error('Could not read this image')}finally{setBusy(false);e.target.value=''}}}/></label></div>
+}
+export function StudentProfile({id,start}:{id:string;start:(k:string,i?:Row)=>void}){
+ const [profile,setProfile]=useState<Row|null>(null),[error,setError]=useState('');
+ useEffect(()=>{let active=true;api<Row>('/students/'+id).then(p=>{if(active)setProfile(p)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[id]);
+ if(error)return <p role="alert">{error}</p>;if(!profile)return <p>Loading profile…</p>;
+ return <><Cover url={profile.cover_url}/><h2>{profile.name}</h2><p>{profile.branch||'Branch not added'} · Year {profile.year}</p><p>{profile.bio||'No bio yet.'}</p><h3>Skills</h3><p>{profile.skills||'No skills added yet.'}</p>{profile.github&&<a className="text-button" href={profile.github} target="_blank" rel="noopener noreferrer">GitHub profile</a>}<h3>Club memberships</h3>{profile.memberships.length?profile.memberships.map((m:any)=><button className="small-button" key={m.club.id} onClick={()=>start('clubDetail',m.club)}>{m.club.name} · {m.role}</button>):<p>No club memberships yet.</p>}<h3>Projects</h3>{profile.projects.length?profile.projects.map((p:Row)=><div className="list-row" key={p.id}><button className="text-button" onClick={()=>start('projectDetail',p)}>{p.title}</button></div>):<p>No projects shared yet.</p>}</>
+}
+export function ClubPeople({id,start}:{id:string;start:(k:string,i?:Row)=>void}){
+ const [members,setMembers]=useState<Row[]|null>(null),[error,setError]=useState('');
+ useEffect(()=>{let active=true;list('/clubs/'+id+'/directory').then(p=>{if(active)setMembers(p)}).catch(e=>{if(active)setError(e.message)});return()=>{active=false}},[id]);
+ return <><h3>Club members and coordinators</h3>{error?<p role="alert">{error}</p>:members===null?<p>Loading members…</p>:members.length?members.map(m=><div className="list-row" key={m.id}><button className="text-button grow" onClick={()=>start('studentDetail',{id:m.user_id})}>{m.name}</button><span className="badge">{m.role}</span></div>):<p>No members yet.</p>}</>
+}
+export function CoordinatorRequests({s,mutate}:{s:Workspace;mutate:Mutate}){
+ return <section className="panel"><h2>Coordinator requests</h2><p className="muted">Students can join immediately after email verification. Only club coordinator access needs administrator approval.</p>{s.coordinatorRequests.length?s.coordinatorRequests.map(r=><div className="list-row wrap" key={r.id}><div className="grow"><strong>{s.clubs.find(c=>c.id===r.club_id)?.name||'Club'}</strong><p>{s.students.find(u=>u.id===r.user_id)?.name||s.users.find(u=>u.id===r.user_id)?.name} · {r.message}</p></div><span className="badge">{r.status==='accepted'?'Approved':r.status==='declined'?'Declined':'Pending'}</span>{s.me.admin&&r.status==='pending'&&<><button className="small-button" onClick={()=>mutate(`/admin/coordinator-requests/${r.id}/decision`,'POST',{status:'accepted'})}>Approve coordinator</button><button className="small-button" onClick={()=>mutate(`/admin/coordinator-requests/${r.id}/decision`,'POST',{status:'declined'})}>Decline</button></>}</div>):<p>No coordinator requests yet. Students can request access from a club page.</p>}</section>
+}
+
+export function StudentDirectory({start}:{start:(kind:string,item?:Row)=>void}){
+ const [query,setQuery]=useState(''),[offset,setOffset]=useState(0),[rows,setRows]=useState<Row[]>([]),[busy,setBusy]=useState(true),[error,setError]=useState('');
+ useEffect(()=>{let alive=true;setBusy(true);const timer=setTimeout(()=>{api<Row[]>(`/students?limit=24&offset=${offset}&q=${encodeURIComponent(query)}`).then(items=>{if(alive){setRows(items);setError('')}}).catch(e=>{if(alive)setError(e.message)}).finally(()=>{if(alive)setBusy(false)})},250);return()=>{alive=false;clearTimeout(timer)}},[query,offset]);
+ return <><label className="search"><input aria-label="Search students" placeholder="Search name or skills" maxLength={100} value={query} onChange={e=>{setQuery(e.target.value);setOffset(0)}}/></label>{error&&<p role="alert">{error}</p>}{busy?<p role="status">Loading students…</p>:<div className="grid three">{rows.map(u=><article className="club-card" key={u.id}><Cover url={u.cover_url}/><h3>{u.name}</h3><p>{u.branch} · Year {u.year}</p><p>{u.skills||'Skills not added yet'}</p><button className="small-button" onClick={()=>start('studentDetail',u)}>View profile</button></article>)}</div>}{!busy&&!rows.length&&<p>No matching students.</p>}<div className="button-row"><button className="small-button" disabled={busy||offset===0} onClick={()=>setOffset(Math.max(0,offset-24))}>Previous students</button><span>Page {Math.floor(offset/24)+1}</span><button className="small-button" disabled={busy||rows.length<24} onClick={()=>setOffset(offset+24)}>Next students</button></div></>
+}

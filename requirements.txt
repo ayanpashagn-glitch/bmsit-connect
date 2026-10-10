@@ -1,0 +1,12 @@
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+SQLAlchemy==2.0.54
+psycopg[binary]==3.3.6
+alembic==1.20.0
+pwdlib[argon2]==0.3.1
+pydantic-settings==2.15.0
+email-validator==2.3.0
+Pillow==12.3.0
+google-auth[requests]==2.58.1
+boto3==1.43.103
+redis==5.2.1

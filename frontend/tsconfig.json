@@ -1,0 +1,1 @@
+{"compilerOptions":{"target":"ES2022","lib":["DOM","DOM.Iterable","ES2022"],"module":"ESNext","moduleResolution":"bundler","jsx":"react-jsx","strict":true,"skipLibCheck":true,"esModuleInterop":true,"allowImportingTsExtensions":true,"noEmit":true,"baseUrl":".","paths":{"@/*":["./*"]},"types":["node"]},"include":["src","components","hooks","lib","vite.config.ts"]}
